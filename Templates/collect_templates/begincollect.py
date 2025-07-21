@@ -17,7 +17,7 @@ from Window_Coordinates_Initial import get_window_rect
 
 # ===== 模板保存目录 =====
 # 开始游戏按钮数字模板保存的文件夹
-TEMPLATE_DIR = 'begin_img'
+TEMPLATE_DIR = 'Templates/begin_img'
 
 # 如果目录不存在，则创建
 if not os.path.exists(TEMPLATE_DIR):
@@ -26,7 +26,7 @@ if not os.path.exists(TEMPLATE_DIR):
 # ===== 截图区域定义 =====
 # 定义开始游戏按钮区域的截图位置（请根据你的屏幕实际位置调整）
 # 格式：(x坐标, y坐标, 宽度, 高度)
-REGION = (980 + x_o, 400 + y_o, 100, 30)
+REGION = (980 + x_o, 415 + y_o, 100, 30)
 
 # ===== 数字范围 =====
 # 需要采集的数字模板：0 ~ 20

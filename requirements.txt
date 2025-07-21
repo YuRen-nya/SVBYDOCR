@@ -1,0 +1,14 @@
+# 如需GPU加速，请根据你的CUDA版本选择合适的torch/torchvision wheel
+# 下面为CUDA 11.8版本，如需其他版本请参考 https://pytorch.org/get-started/locally/
+--extra-index-url https://download.pytorch.org/whl/cu118
+
+opencv-python
+numpy
+pyautogui
+scikit-learn
+pillow
+imagehash
+torch==2.2.2+cu118
+torchvision==0.17.2+cu118
+ultralytics
+pywin32

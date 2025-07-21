@@ -71,7 +71,7 @@ def train_model(model, num_epochs=10):
     return model
 
 # 开始训练
-model = train_model(model, num_epochs=10)
+model = train_model(model, num_epochs=5)
 
 # 保存模型
 torch.save(model.state_dict(), 'image_classifier1.pth')

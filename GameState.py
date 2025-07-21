@@ -47,26 +47,6 @@ ppt,ppl=load_templates("Templates/pp_img1")  # PP值模板
 model1 = YOLO('best.pt')  # 随从目标检测模型 - 检测战场上的随从位置
 model2 = YOLO('bestv2.pt')  # 数值检测模型 - 检测随从的攻击力和生命值
 
-# ===== 图像分类模型1配置 =====
-# 分类模型配置1 - 用于检测随从状态（dash/normal/rush）
-# dash: 冲锋状态，可以立即攻击
-# normal: 普通状态，需要等待一回合才能攻击
-# rush: 突袭状态，可以攻击敌方随从但不能攻击英雄
-class_names1 = ['dash','normal','rush']  # 随从状态类别
-CLASS_COUNT1 = len(class_names1)
-
-# 加载图像分类模型1
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # 选择GPU或CPU
-model_cls1 = models.resnet18(weights=None)  # 使用ResNet18架构
-num_ftrs = model_cls1.fc.in_features
-model_cls1.fc = torch.nn.Linear(num_ftrs, CLASS_COUNT1)  # 修改最后一层以匹配类别数
-try:
-    model_cls1.load_state_dict(torch.load('image_classifier1.pth'))  # 加载训练好的权重
-except Exception as e:
-    raise FileNotFoundError(f"找不到分类模型文件 image_classifier1.pth:{e}")
-model_cls1.to(device)  # 将模型移到指定设备
-model_cls1.eval()  # 设置为评估模式
-
 # ===== 图像分类模型2配置 =====
 # 分类模型配置2 - 用于检测嘲讽状态（True/False）
 # True: 嘲讽状态，敌方必须先攻击具有嘲讽的随从
@@ -75,6 +55,7 @@ class_names2 = ['False', 'True']  # 嘲讽状态类别（字符串形式）
 CLASS_COUNT2 = len(class_names2)
 
 # 加载图像分类模型2
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # 选择GPU或CPU
 model_cls2 = models.resnet18(weights=None)  # 使用ResNet18架构
 num_ftrs = model_cls2.fc.in_features
 model_cls2.fc = torch.nn.Linear(num_ftrs, CLASS_COUNT2)  # 修改最后一层以匹配类别数
@@ -116,6 +97,8 @@ class GameState:
         self.own_minion_health = []      # 生命值列表 [hp1, hp2, ...]
         self.own_minion_follows = []     # 随从状态列表（dash/normal/rush）
         self.own_minion_ids = []         # 随从ID列表 [id1, id2, ...] 用于标识每个随从
+        self.own_minion_evo = []         # evo列表 [evo1, evo2, ...] 用于标识每个随从的evo类型（normal、evo、sevo）
+        self.own_minion_evo_rush = []    # evo-rush列表
 
         # ===== 敌方随从相关 =====
         self.opponent_minion_count = 0  # 敌方随从数量
@@ -132,6 +115,7 @@ class GameState:
         self.e_value = 0                 # 当前e值（能量值），用于某些特殊卡牌
         self.se_value = 0                # 当前se值（特殊能量值），用于某些特殊卡牌
         self.PP1 = 0                     # 后手PP值，用于后手优势机制
+        self.graveyard_count = 99         # 墓地数量
 
     def print_state(self):
         """
@@ -247,6 +231,8 @@ def Get_b_i(state):
     state.opponent_minion_taunt.clear()
 
     state.own_minion_ids.clear()
+    state.own_minion_evo.clear()
+    state.own_minion_evo_rush.clear()
 
     # ===== 目标检测 =====
     # 截取战场区域的图像，这是随从所在的主要区域
@@ -283,7 +269,7 @@ def Get_b_i(state):
     # ===== 数据集管理 =====
     # 检测已有图片数量，用于生成新的文件名
     # 这些图片用于模型训练和数据集扩充
-    existing_files = [f for f in os.listdir('dataset\images') if f.startswith('image_') and f.endswith('.png')]
+    existing_files = [f for f in os.listdir('dataset/images') if f.startswith('image_') and f.endswith('.png')]
     next_index = len(existing_files)
 
     # ===== 敌方随从处理 =====
@@ -296,7 +282,7 @@ def Get_b_i(state):
         
         # 保存随从图像到数据集，用于模型训练
         filename = f"image_{next_index:04d}.png"
-        save_minion_image(r_tuple, os.path.join('dataset\images', filename))
+        save_minion_image(r_tuple, os.path.join('dataset/images', filename))
         next_index += 1
 
         # 更新状态信息
@@ -353,7 +339,7 @@ def Get_b_i(state):
         
         # 保存随从图像到数据集
         filename = f"image_{next_index:04d}.png"
-        save_minion_image(r_tuple, os.path.join('dataset\images', filename))
+        save_minion_image(r_tuple, os.path.join('dataset/images', filename))
         next_index += 1
 
         # 更新状态信息
@@ -384,18 +370,45 @@ def Get_b_i(state):
             health = 0
         state.own_minion_attack.append(int(attack))
         state.own_minion_health.append(int(health))
-        
-        # ===== 随从状态检测 =====
-        # 转换为 RGB 并转换成 PIL 图像
-        img_pil = Image.fromarray(cv2.cvtColor(minion_img, cv2.COLOR_BGR2RGB)).convert('RGB')
-        img_tensor = transform(img_pil).unsqueeze(0).to(device)
 
-        # 使用分类模型检测随从状态（dash/normal/rush）
-        with torch.no_grad():
-            output = model_cls1(img_tensor)
-            _, preds = torch.max(output, 1)
-            label = class_names1[preds.item()]
+         # ===== 随从状态检测（HSV面积法） =====
+        # 先检测dash（黄色）
+        def hsv_area_classify(img):
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            h, w = img.shape[:2]
+            # 外圈mask
+            outer_mask = np.zeros((h, w), np.uint8)
+            cv2.rectangle(outer_mask, (0, 0), (w, h), (255,), -1)
+            rect_scale = 0.7
+            x1 = int(w * (1 - rect_scale) / 2)
+            y1 = int(h * (1 - rect_scale) / 2)
+            x2 = int(w * (1 + rect_scale) / 2)
+            y2 = int(h * (1 + rect_scale) / 2)
+            cv2.rectangle(outer_mask, (x1, y1), (x2, y2), (0,), -1)
+            # 1. dash（黄色）
+            lower1 = np.array([60, 60, 140])
+            upper1 = np.array([90, 210, 255])
+            mask1 = cv2.inRange(hsv, lower1, upper1)
+            mask1 = cv2.bitwise_and(mask1, outer_mask)
+            area1 = np.sum(mask1 == 255)
+            outer_area = np.sum(outer_mask == 255)
+            ratio1 = area1 / outer_area if outer_area > 0 else 0
+            if ratio1 > 0.1:
+                return 'dash'
+            # 2. rush（橙色）
+            lower2 = np.array([20, 120, 200])
+            upper2 = np.array([25, 200, 255])
+            mask2 = cv2.inRange(hsv, lower2, upper2)
+            mask2 = cv2.bitwise_and(mask2, outer_mask)
+            area2 = np.sum(mask2 == 255)
+            ratio2 = area2 / outer_area if outer_area > 0 else 0
+            if ratio2 > 0.1:
+                return 'rush'
+            # 3. normal
+            return 'normal'
+        label = hsv_area_classify(minion_img)
         state.own_minion_follows.append(label)
+        state.own_minion_evo_rush.append(True)
     
     # ===== 随从ID检测 =====
     # 使用原始的detect_own_minion逻辑，但集成到Get_b_i中
@@ -407,7 +420,7 @@ def Get_b_i(state):
     region = (x_o, y_o+400, 1400, 230)  # 我方随从区域
     # a=pyautogui.screenshot(region=region)  # 截图区域
     # a.show()  # 调试
-    all_boxes = find_all_templates_in_screenshot("MB_b", region=region, c1=0.3)
+    all_boxes = find_all_templates_in_screenshot("Templates/MB_b", region=region, c1=0.3)
     instance_list = extract_instance_info(all_boxes)
     instance_list.sort(key=lambda x: x["min_x"])
     

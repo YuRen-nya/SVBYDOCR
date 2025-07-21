@@ -61,6 +61,6 @@ def batch_preprocess_images(input_folder, output_folder, threshold=150):
 
 # ===== 示例调用 =====
 # 处理换牌界面的数字模板
-input_dir = 'change_img'      # 原始模板文件夹
-output_dir = 'change_img1'    # 处理后模板文件夹
+input_dir = 'Templates/change_img'      # 原始模板文件夹
+output_dir = 'Templates/change_img1'    # 处理后模板文件夹
 batch_preprocess_images(input_dir, output_dir, threshold=150)

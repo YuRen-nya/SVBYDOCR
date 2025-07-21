@@ -15,10 +15,10 @@ import os
 
 # 导入自定义模块
 from GameState import GameState, Get_GameState  # 游戏状态识别模块
-from Config import CL, ACTION, find_best_strategy  # 策略配置和选择模块
-from ATT import perform_full_attack  # 攻击执行模块
 from Window_Coordinates_Initial import get_window_rect  # 窗口坐标获取模块
 from Templates import load_templates, template_match  # 模板匹配模块
+from action_playcard import replay_action_path  # 导入复现函数
+from ai_core import exhaustive_ai_search  # 导入AI推演函数
 
 # ===== 全局变量定义 =====
 # 数据记录列表 - 存储游戏过程中的所有行动数据，用于强化学习训练
@@ -39,7 +39,7 @@ class GameAction:
         
         Args:
             state: 游戏状态对象，包含当前游戏的所有状态信息
-            action_id: 执行的策略ID，对应Config.py中定义的策略
+            action_id: 执行的策略ID
             reward: 奖励值（可选），用于强化学习训练
         """
         self.timestamp = time.time()  # 记录时间戳，用于数据分析和调试
@@ -56,8 +56,8 @@ class GameAction:
         }
         self.action_id = action_id  # 策略ID
         self.reward = reward  # 奖励值
-        # 获取策略名称，用于日志输出和数据分析
-        self.action_name = CL[action_id][0] if action_id in CL else f"action_{action_id}"
+        # 直接用action_id字符串作为动作名
+        self.action_name = str(action_id)
     
     def to_dict(self):
         """
@@ -160,20 +160,10 @@ btn_pause = None
 
 def run_one_turn():
     """
-    运行一次完整回合流程
-    包括：获取状态、策略选择、出牌、攻击阶段
-    
-    流程：
-    1. 获取最新游戏状态
-    2. 循环选择并执行策略，直到无可用策略
-    3. 执行攻击阶段
-    4. 结束回合
-    
-    这是游戏自动化的核心函数，负责执行完整的游戏逻辑
+    运行一次完整回合流程（AI推演+现实复现）
     """
-    global game_in_progress  # 全局变量声明必须在函数开始处
-    
-    # 检查暂停状态，如果暂停则跳过执行
+    global game_in_progress
+
     with pause_lock:
         if paused:
             log("[INFO] 当前处于暂停状态，跳过执行")
@@ -186,62 +176,22 @@ def run_one_turn():
     # Step 1: 获取最新游戏状态
     Get_GameState(state)
 
-    # Step 2: 循环选择并执行策略，直到无可用策略
-    strategy_count = 0
-    while True:
-        # 检查暂停状态
-        with pause_lock:
-            if paused:
-                log("[INFO] 执行中断：当前处于暂停状态")
-                return
+    # Step 2: AI推演最优路径
+    log("[AI] 开始推演最优回合路径...")
+    result = exhaustive_ai_search(state)
+    if result is None:
+        log("[AI] 未找到可行动作路径，跳过本回合")
+        return
+    best_path, _ = result
+    if not best_path:
+        log("[AI] 未找到可行动作路径，跳过本回合")
+        return
 
-        # 寻找最佳策略，使用Config.py中定义的策略选择逻辑
-        best_strategy_id = find_best_strategy(state, CL)
-        if best_strategy_id is None:
-            break  # 没有可用策略，退出循环
-
-        log(f"选定策略ID: {best_strategy_id}")
-        
-        # 记录行动数据（如果启用），用于强化学习训练
-        if recording_enabled:
-            game_actions.append(GameAction(state, best_strategy_id))
-        
-        try:
-            # 执行策略，调用Config.py中定义的ACTION函数
-            ACTION[best_strategy_id](state)
-            strategy_count += 1
-
-            # 更新游戏状态（重新读取），确保状态同步
-            Get_GameState(state)
-
-        except Exception as e:
-            log(f"[错误] 执行策略 {best_strategy_id} 时发生异常: {e}")
-            break
-
-    # 输出策略执行结果
-    if strategy_count == 0:
-        log("无可用策略，跳过出牌阶段")
-    else:
-        log(f"共执行了 {strategy_count} 个策略")
-
-    # Step 3: 攻击阶段
-    with pause_lock:
-        if paused:
-            log("[INFO] 当前处于暂停状态，跳过攻击阶段")
-            return
-
-    if state.own_minion_count > 0:
-        log("开始攻击阶段")
-        perform_full_attack(state)  # 执行完整攻击流程
-        state.print_state()  # 打印当前状态
-    else:
-        log("我方无随从，跳过攻击阶段")
-
-    # Step 4: 回合结束 - 点击结束按钮
-    # 使用mouseDown/mouseUp模拟真实点击，提高稳定性
-    pyautogui.mouseDown(1450 + x_o, 450 + y_o)
-    time.sleep(0.5)
-    pyautogui.mouseUp()
+    # Step 3: 现实复现最优路径
+    log("[AI] 开始现实执行最优路径...")
+    replay_action_path(state, best_path, step_pause=False)
+    log("[AI] 本回合执行完毕")
+    
 
 
 def start_turn():
@@ -359,8 +309,9 @@ def auto_run_loop():
 
             if not in_game:
                 # 游戏未进行时，检测开始游戏按钮
-                start_region = (980 + x_o, 400 + y_o, 100, 30)
+                start_region = (980 + x_o, 415 + y_o, 100, 30)
                 start_matched = template_match(start_region, begin1, begin1l, threshold_match=0.8)
+                log(f"[AUTO] 检测中")
 
                 if start_matched and (current_time - last_start_time) > start_cooldown:
                     log("[AUTO] 检测到开始游戏按钮，点击开始游戏...")
@@ -378,7 +329,7 @@ def auto_run_loop():
             else:
                 # 游戏进行中时，先检测换牌界面
                 if not change_done:
-                    change_region = (450 + x_o, 450 + y_o, 500, 50)
+                    change_region = (450 + x_o, 465 + y_o, 500, 50)
                     change_matched = template_match(change_region, change1, change1l, threshold_match=0.8)
 
                     if change_matched and (current_time - last_change_time) > change_cooldown:
@@ -435,7 +386,7 @@ def is_paused():
 # ===== GUI界面创建 =====
 # 创建主窗口，设置标题和大小
 root = tk.Tk()
-root.title("SZBAI控制器 v2.0")
+root.title("SZB控制器 v2.0")
 root.geometry("600x400")
 
 # 添加手动执行按钮 - 可以手动触发一次完整回合

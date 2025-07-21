@@ -26,9 +26,11 @@ flann = cv2.FlannBasedMatcher(index_params, search_params)
 
 
 # ========== 核心模板匹配函数 ==========
-def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
+def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5, text=False):
     if template_path in template_cache:
         kp1, des1 = template_cache[template_path]
+        if text:
+            print(f"[调试] 模板已缓存: {template_path}, 关键点数: {len(kp1)}")
     else:
         template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
         if template is None:
@@ -39,15 +41,26 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
             print(f"[ERROR] 无法提取模板特征: {template_path}")
             return []
         template_cache[template_path] = (kp1, des1)
+        if text:
+            print(f"[调试] 模板特征提取: {template_path}, 关键点数: {len(kp1)}")
 
     kp2, des2 = sift.detectAndCompute(screenshot_gray, None)
+    if text:
+        print(f"[调试] 目标图特征提取: 关键点数: {len(kp2) if kp2 is not None else 0}")
+        cv2.imshow("match_debug_target", screenshot_gray)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
     if des2 is None:
         return []
 
     matches = flann.knnMatch(des1, des2, k=2)
     good_matches = [m for m, n in matches if m.distance < c1 * n.distance]
+    if text:
+        print(f"[调试] 匹配点数: {len(good_matches)} (阈值c1={c1})")
 
     if len(good_matches) < 20:
+        if text:
+            print(f"[调试] 匹配点数不足: {len(good_matches)} < 20")
         return []
 
     src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 2)
@@ -56,6 +69,8 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
     # 加回 DBSCAN 聚类
     clustering = DBSCAN(eps=50, min_samples=12).fit(dst_pts)
     labels = clustering.labels_
+    if text:
+        print(f"[调试] DBSCAN聚类标签: {set(labels)}")
 
     unique_labels = set(labels)
     boxes = []
@@ -63,6 +78,8 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
     for label in unique_labels:
         cluster_pts = dst_pts[labels == label]
         if len(cluster_pts) < 10:  # 最少匹配点数
+            if text:
+                print(f"[调试] 聚类{label}点数不足: {len(cluster_pts)} < 10，跳过")
             continue
 
         # 计算该簇的平均 Homography
@@ -71,6 +88,8 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
 
         H, mask = cv2.findHomography(src_cluster, cluster_pts, cv2.RANSAC, 5.0)
         if H is None:
+            if text:
+                print(f"[调试] 聚类{label} Homography计算失败")
             continue
 
         h, w = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE).shape[:2]
@@ -78,6 +97,8 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5):
         transformed_corners = cv2.perspectiveTransform(corners, H)
         box_coords = np.int32(transformed_corners).reshape(4, 2).tolist()
         boxes.append(box_coords)
+        if text:
+            print(f"[调试] 聚类{label} 匹配到box: {box_coords}")
 
     return boxes
 

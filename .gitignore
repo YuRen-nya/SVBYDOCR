@@ -5,6 +5,11 @@ venv/
 __pycache__/
 data/
 dataset/
+dataset_deduplicated/
 yolo11n.pt
 yolov5nu.pt
-
+build/
+dist/
+ms/
+main.exe
+main.spec
