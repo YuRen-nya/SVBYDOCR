@@ -1,92 +1,87 @@
-# 以下内容由 AI 生成！！！不负责真实性与实用性哈
-
 # SZBAI 控制器项目
 
-本项目为卡牌游戏自动化控制与数据采集系统，集成了游戏状态识别、自动策略执行、深度学习模型训练与推理等功能。适用于自动化对局、AI 训练数据采集、模型测试等场景。
+本项目为卡牌游戏影之诗自动化控制与数据采集系统，集成了游戏状态识别、自动策略执行功能。适用于自动化对局等场景。
 
 ## 主要功能
 
 - **游戏自动化控制**：自动识别游戏状态，执行策略、自动点击、自动攻击等操作。
-- **数据采集**：自动记录每回合状态、动作、奖励等数据，便于后续 AI 训练。
-- **模板匹配与 OCR**：基于模板匹配和深度学习模型识别游戏界面中的数值与元素。
-- **深度学习模型训练**：集成 YOLO、ResNet18 等模型的训练与推理脚本，支持自定义数据集。
-- **可视化与 GUI**：自带 Tkinter 图形界面，便于手动/自动控制与日志查看。
+- **数据采集**：自动记录每回合状态、动作、奖励等数据，便于后续训练提高识别准确率，策略稳定性。
 
 ## 目录结构
 
 ```
 OCRSZB2/
-│
-├── main.py                  # 主程序，自动化控制与GUI入口
-├── GameState.py             # 游戏状态识别与数据结构
-├── Config.py                # 策略配置与动作定义
-├── ATT.py                   # 攻击执行模块
-├── Templates.py             # 模板加载与匹配工具
+├── main.py                # 主程序入口，GUI与自动化主流程
+├── ai_core.py             # AI推演与动作枚举、执行核心
+├── action_playcard.py     # 动作复现与现实操作实现
+├── action_de.py           # 卡牌动作与属性数据库（大字典）
+├── GameState.py           # 游戏状态识别与数据结构
+├── Templates/             # 模板图片与模板匹配脚本
+│   ├── ...               # 各类图片与模板
+│   └── ...
 ├── Window_Coordinates_Initial.py # 窗口坐标获取
-├── Catch_image.py           # 屏幕截图工具
-├── rl_trainer.py            # 强化学习训练脚本
-├── rl_data_processor.py     # 强化学习数据处理
-│
-├── Templates/               # 所有模板图片文件夹（如*_img、MB_h等）
-│
-├── ms/                      # 数据与模型相关目录
-│   ├── ds_yolo/             # YOLO相关训练/测试脚本
-│   ├── ds_resnet18/         # ResNet18相关训练/测试脚本
-│   ├── datav2/              # YOLO数据集
-│   ├── prepared_dataset1/   # 分类模型数据集1
-│   ├── prepared_dataset2/   # 分类模型数据集2
-│
-├── data/                    # 自动采集的游戏数据（json/csv）
-├── dataset/                 # 其他数据集
-├── backup/                  # 备份代码
-├── runs/                    # 训练结果与日志
-│
-├── best.pt                  # YOLO模型权重
-├── bestv2.pt                # YOLO模型权重
-├── yolo11n.pt               # YOLO模型权重
-├── yolov5nu.pt              # YOLO模型权重
-├── image_classifier1.pth    # 分类模型权重1
-├── image_classifier2.pth    # 分类模型权重2
-│
-└── ...                      # 其他辅助文件
+├── requirements.txt       # 依赖库列表
+├── README.md              # 项目说明文档
+├── data/                  # 数据记录与保存
+├── ...                    # 其它辅助脚本与目录
 ```
 
 ## 依赖环境
 
-- Python 3.8+
-- 主要依赖包（部分功能需 GPU 支持）：
-  - opencv-python
-  - numpy
-  - torch
-  - torchvision
-  - pyautogui
-  - scikit-learn
-  - tkinter（标准库）
-  - 其他：Pillow、concurrent.futures 等
+- Python 3.8 及以上
+- 推荐使用 Anaconda 虚拟环境或 venv
 
-安装依赖（推荐使用虚拟环境）：
+### 主要依赖库
+
+- numpy
+- opencv-python
+- pyautogui
+- pillow
+- scikit-learn
+- tkinter（标准库，Windows 自带）
+- threading（标准库）
+- time、os、json、functools 等标准库
+
+### 安装依赖
+
+推荐使用 requirements.txt 一键安装：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> 如无 requirements.txt，可根据实际用到的包手动安装。
+如遇部分库未包含，可手动安装：
+
+```bash
+pip install numpy opencv-python pyautogui pillow scikit-learn
+```
 
 ## 快速上手
 
-1. **准备好游戏窗口**，确保分辨率与坐标设置一致。
-2. **运行主程序**：
+1. **准备好游戏窗口**，确保分辨率为 1600\*900 设置。
+2. **运行主程序**，python main.py
+3. **功能介绍**，运行一次完整回合流程：单局测试用；切换自动运行开关状态：在一局对战的结束界面启动可以自动循环运行\*；手动触发主要游戏流程：换牌后点击可以自动运行一场对战。
 
+## 运行方式
+
+1. 启动 main.py：
    ```bash
    python main.py
    ```
+2. 按照界面提示操作。
 
 3. **使用 GUI 界面**进行手动/自动控制，查看日志与数据采集情况。
 4. **数据与模型训练**：进入`ms/`目录，运行相应的训练/测试脚本（如 YOLO、ResNet18 等）。
 
-## 数据与模型说明
+如有问题请联系开发者或提交 issue
 
-- **Templates/**：所有模板图片，支持自定义扩展。
-- **ms/ds_yolo/**、**ms/ds_resnet18/**：包含训练、验证、数据处理等脚本，适配 ms 目录结构。
-- **ms/datav2/**、**ms/prepared_dataset1/**、**ms/prepared_dataset2/**：存放数据集，结构已适配代码。
-- **data/**：自动采集的对局数据，便于后续 AI 训练。
+该项目雷点：
+局外流程一坨；
+弹个每日任务奖励就不自动循环了；
+同名手牌连在一起认不出；
+没做错误捕获导致一出错就卡死；
+没 log
+
+已知 bug：
+关于部分卡的战场识别失效问题；
+局外流程的超时 bug
