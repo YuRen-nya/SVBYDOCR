@@ -60,7 +60,7 @@ model_cls2 = models.resnet18(weights=None)  # 使用ResNet18架构
 num_ftrs = model_cls2.fc.in_features
 model_cls2.fc = torch.nn.Linear(num_ftrs, CLASS_COUNT2)  # 修改最后一层以匹配类别数
 try:
-    model_cls2.load_state_dict(torch.load('image_classifier2.pth'))  # 加载训练好的权重
+    model_cls2.load_state_dict(torch.load('image_classifier2.pth', map_location=device))  # 加载训练好的权重
 except Exception as e:
     raise FileNotFoundError(f"找不到分类模型文件 image_classifier2.pth:{e}")
 model_cls2.to(device)  # 将模型移到指定设备
@@ -239,7 +239,7 @@ def Get_b_i(state):
     image = get_screenshot_region(250+x_o,210+y_o,1050,420)
     image1 = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     # 使用YOLO模型检测随从，置信度阈值为0.4
-    results = model1.predict(source=image1, conf=0.4, save=False,verbose=False)
+    results = model1.predict(source=image1, conf=0.6, save=False,verbose=False)
     
     # ===== 数据分类 =====
     minions = []  # 我方随从列表
@@ -408,6 +408,7 @@ def Get_b_i(state):
             return 'normal'
         label = hsv_area_classify(minion_img)
         state.own_minion_follows.append(label)
+        state.own_minion_evo.append("normal")
         state.own_minion_evo_rush.append(True)
     
     # ===== 随从ID检测 =====

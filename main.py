@@ -12,6 +12,7 @@ import time
 import pyautogui
 import json
 import os
+import functools
 
 # 导入自定义模块
 from GameState import GameState, Get_GameState  # 游戏状态识别模块
@@ -25,6 +26,7 @@ from ai_core import exhaustive_ai_search  # 导入AI推演函数
 game_actions = []
 # 数据记录开关 - 控制是否记录游戏数据，可在GUI中切换
 recording_enabled = True
+
 
 # ===== 强化学习数据记录类 =====
 class GameAction:
@@ -158,6 +160,24 @@ game_state_lock = threading.Lock()  # 游戏状态锁
 # GUI按钮变量
 btn_pause = None
 
+def with_timeout_protection(timeout=120, click_pos=(960, 540)):
+    """
+    通用超时保护装饰器。超时后自动点击屏幕中心（或指定位置），并log提示。
+    用法：@with_timeout_protection(timeout=120)
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            timer = threading.Timer(timeout, lambda: (log(f"[超时保护] {func.__name__} 超过{timeout}s未响应，点击屏幕中心防止卡死..."), pyautogui.click(*click_pos)))
+            timer.start()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                timer.cancel()
+        return wrapper
+    return decorator
+
+@with_timeout_protection(timeout=120)
 def run_one_turn():
     """
     运行一次完整回合流程（AI推演+现实复现）
@@ -273,6 +293,7 @@ def reset_game_state():
     log("[CONTROL] 游戏状态已手动重置")
 
 
+@with_timeout_protection(timeout=120)
 def auto_run_loop():
     """
     自动检测循环
@@ -355,7 +376,7 @@ def auto_run_loop():
                         last_run_time = current_time  # 更新最后执行时间
                     
                     # 持续检测游戏是否结束（通过检测开始游戏按钮）
-                    start_region = (980 + x_o, 400 + y_o, 100, 30)
+                    start_region = (980 + x_o, 415 + y_o, 100, 30)
                     start_matched = template_match(start_region, begin1, begin1l, threshold_match=0.8)
                     
                     if start_matched:
@@ -381,17 +402,61 @@ def is_paused():
         return paused
 
 
+@with_timeout_protection(timeout=120)
+def main_game_flow_loop():
+    global game_in_progress, change_detected
+    # 直接设置为“游戏进行中且已换牌”
+    with game_state_lock:
+        game_in_progress = True
+        change_detected = True
+    last_run_time = 0
+    cooldown = 10
+    while True:
+        current_time = time.time()
+        # 超时检测：如果超过120秒未推进，点击屏幕中心
+        if current_time - last_run_time > 120:
+            log("[超时保护] 超过120秒未推进，点击屏幕中心防止卡死...")
+            pyautogui.click(960, 540)
+            last_run_time = current_time  # 重置时间，防止多次点击
+        # 换牌完成后，检测结束按钮
+        end_region = (1400 + x_o, 425 + y_o, 100, 50)
+        end_matched = template_match(end_region, end1, end1l, threshold_match=0.7)
+        if end_matched and (current_time - last_run_time) > cooldown:
+            log("[AUTO] 检测到结束按钮，开始执行回合流程...")
+            run_one_turn()
+            last_run_time = current_time
+        # 检测游戏是否结束
+        start_region = (980 + x_o, 415 + y_o, 100, 30)
+        start_matched = template_match(start_region, begin1, begin1l, threshold_match=0.8)
+        if start_matched:
+            log("[GAME] 检测到游戏结束：出现开始游戏按钮")
+            with game_state_lock:
+                game_in_progress = False
+                change_detected = False
+            log("[GAME] 游戏状态已重置，等待下一局游戏...")
+            break  # 退出循环
+        time.sleep(1)
 
+def start_main_game_flow_manual():
+    """
+    手动触发主要游戏流程（从换牌完成后开始自动检测）
+    """
+    log("[CONTROL] 手动触发主要游戏流程（从换牌完成后开始自动检测）...")
+    threading.Thread(target=main_game_flow_loop, daemon=True).start()
 
 # ===== GUI界面创建 =====
 # 创建主窗口，设置标题和大小
 root = tk.Tk()
-root.title("SZB控制器 v2.0")
-root.geometry("600x400")
+root.title("SZB控制器 v3.0")
+root.geometry("200x400+1700+100")
 
 # 添加手动执行按钮 - 可以手动触发一次完整回合
 btn_manual = tk.Button(root, text="手动执行一次完整回合", width=25, height=2, command=start_turn)
 btn_manual.pack(pady=5)
+
+# 添加主要游戏流程按钮 - 直接从主要流程开始
+btn_main_flow = tk.Button(root, text="开始主要游戏流程", width=25, height=2, command=start_main_game_flow_manual)
+btn_main_flow.pack(pady=5)
 
 # 添加自动运行按钮 - 控制自动检测和运行
 btn_text_auto = tk.StringVar()
@@ -411,7 +476,7 @@ tk.Button(root, text="保存游戏数据", width=25, height=2, command=save_game
 tk.Button(root, text="重置游戏状态", width=25, height=2, command=reset_game_state).pack(pady=5)
 
 # 日志显示框 - 实时显示程序运行状态和日志信息
-text_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=70, height=20)
+text_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=30, height=50)
 text_box.pack(padx=10, pady=5, expand=True, fill='both')
 
 # 启动自动检测线程 - 在后台持续运行，不影响GUI响应

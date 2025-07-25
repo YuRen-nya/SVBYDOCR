@@ -67,7 +67,7 @@ def match_template_and_get_boxes(template_path, screenshot_gray, c1=0.5, text=Fa
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 2)
 
     # 加回 DBSCAN 聚类
-    clustering = DBSCAN(eps=50, min_samples=12).fit(dst_pts)
+    clustering = DBSCAN(eps=30, min_samples=10).fit(dst_pts)
     labels = clustering.labels_
     if text:
         print(f"[调试] DBSCAN聚类标签: {set(labels)}")
